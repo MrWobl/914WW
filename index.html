@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ПРОЕКТ АРХОНТ | Терминал Джарвиса</title>
+    <style>
+        :root {
+            --neon-blue: #00b4d8;
+            --neon-red: #ff003c;
+            --dark-bg: #050a10;
+            --panel-bg: #0a111a;
+            --text-dim: #8a9ba8;
+            --accent-alert: #ff3366;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            background-color: var(--dark-bg);
+            color: var(--neon-blue);
+            font-family: 'Courier New', Courier, monospace;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            position: relative;
+            transition: background-color 1s ease, color 1s ease;
+        }
+
+        body.corrupted {
+            --neon-blue: var(--neon-red);
+            --panel-bg: #150505;
+            --dark-bg: #0a0000;
+        }
+
+        body::before {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+            background-size: 100% 3px, 4px 100%;
+            pointer-events: none;
+            z-index: 100;
+            animation: flicker 0.15s infinite;
+        }
+
+        @keyframes flicker {
+            0% { opacity: 0.97; }
+            50% { opacity: 1.0; }
+            100% { opacity: 0.98; }
+        }
+
+        .container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            padding: 20px;
+            gap: 20px;
+            z-index: 10;
+        }
+
+        .left-panel {
+            flex: 1;
+            background: var(--panel-bg);
+            border: 1px solid var(--neon-blue);
+            border-radius: 4px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 0 15px rgba(0, 180, 216, 0.1);
+            transition: border-color 1s, box-shadow 1s;
+            max-width: 420px;
+            overflow-y: auto;
+        }
+
+        .left-panel::-webkit-scrollbar { width: 6px; }
+        .left-panel::-webkit-scrollbar-thumb { background: var(--neon-blue); border-radius: 3px; }
+
+        .panel-header {
+            border-bottom: 1px solid var(--neon-blue);
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            flex-shrink: 0;
+        }
+
+        .folder {
+            padding: 12px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            user-select: none;
+            flex-shrink: 0;
+        }
+
+        .folder:hover {
+            background: rgba(0, 180, 216, 0.1);
+            border-color: var(--neon-blue);
+        }
+
+        .folder::before { content: "📁"; }
+        .folder.locked::before { content: "🔒"; }
+        .folder.open::before { content: "📂"; }
+        .folder.restricted::before { content: "📷"; }
+        .folder.classified::before { content: "🔴"; }
+
+        .file-content {
+            display: none;
+            padding: 15px;
+            margin-top: 5px;
+            margin-bottom: 10px;
+            background: rgba(0, 0, 0, 0.4);
+            border-left: 2px solid var(--neon-blue);
+            font-size: 0.9em;
+            color: var(--text-dim);
+            line-height: 1.6;
+        }
+
+        .file-content.active { display: block; animation: fadeIn 0.5s; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+
+        .right-panel {
+            flex: 2;
+            background: var(--panel-bg);
+            border: 1px solid var(--neon-blue);
+            border-radius: 4px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 0 15px rgba(0, 180, 216, 0.1);
+            position: relative;
+            transition: border-color 1s, box-shadow 1s;
+        }
+
+        .terminal-output {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 15px;
+            padding-right: 10px;
+            font-size: 0.95em;
+            line-height: 1.6;
+        }
+
+        .terminal-output::-webkit-scrollbar { width: 6px; }
+        .terminal-output::-webkit-scrollbar-thumb { background: var(--neon-blue); border-radius: 3px; }
+
+        .terminal-line { margin-bottom: 8px; word-wrap: break-word; }
+        .terminal-line.system { color: var(--text-dim); }
+        .terminal-line.user { color: #fff; }
+        .terminal-line.error { color: var(--accent-alert); font-weight: bold; }
+        .terminal-line.success { color: #00ff9d; }
+        .terminal-line.critical { color: var(--neon-red); font-weight: bold; text-shadow: 0 0 8px var(--neon-red); }
+
+        .terminal-input-line {
+            display: flex;
+            align-items: center;
+            border-top: 1px solid rgba(0, 180, 216, 0.3);
+            padding-top: 10px;
+        }
+
+        .prompt { margin-right: 10px; font-weight: bold; }
+        
+        #command-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: #fff;
+            font-family: inherit;
+            font-size: 1em;
+            outline: none;
+            caret-color: var(--neon-blue);
+        }
+
+        .sound-toggle {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            width: 36px;
+            height: 36px;
+            background: rgba(0, 180, 216, 0.05);
+            border: 1px solid var(--neon-blue);
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1em;
+            transition: all 0.3s;
+            z-index: 20;
+            user-select: none;
+        }
+        .sound-toggle:hover {
+            background: rgba(0, 180, 216, 0.15);
+            box-shadow: 0 0 10px var(--neon-blue);
+        }
+        .sound-toggle.active {
+            background: rgba(0, 180, 216, 0.2);
+            box-shadow: 0 0 15px var(--neon-blue);
+        }
+        body.corrupted .sound-toggle { border-color: var(--neon-red); }
+        body.corrupted .sound-toggle.active { box-shadow: 0 0 15px var(--neon-red); }
+
+        .hidden-trigger {
+            position: absolute;
+            bottom: 15px;
+            right: 15px;
+            width: 6px;
+            height: 6px;
+            background: #1a0505;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.5s ease;
+            z-index: 20;
+        }
+        .hidden-trigger:hover {
+            background: var(--neon-red);
+            box-shadow: 0 0 15px var(--neon-red);
+            transform: scale(2);
+        }
+
+        /* --- СУЩНОСТЬ ДЖАРВИСА --- */
+        .jarvis-entity {
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            width: 80px;
+            height: 80px;
+            cursor: pointer;
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: auto;
+            transition: transform 0.3s;
+        }
+
+        .jarvis-eyes {
+            display: flex;
+            gap: 16px;
+            transition: gap 0.3s;
+        }
+
+        .eye {
+            width: 18px;
+            height: 18px;
+            background: var(--neon-blue);
+            border-radius: 50%;
+            position: relative;
+            box-shadow: 0 0 15px var(--neon-blue), 0 0 30px var(--neon-blue);
+            transition: all 0.3s;
+        }
+
+        .pupil {
+            width: 6px;
+            height: 6px;
+            background: #fff;
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            transition: all 0.2s;
+        }
+
+        .jarvis-mouth {
+            width: 24px;
+            height: 3px;
+            background: var(--neon-blue);
+            border-radius: 2px;
+            margin-top: 12px;
+            transition: all 0.3s;
+            box-shadow: 0 0 10px var(--neon-blue);
+        }
+
+        .jarvis-mouth.talking {
+            animation: talk 0.15s infinite alternate;
+        }
+
+        @keyframes talk {
+            0% { height: 3px; border-radius: 2px; }
+            100% { height: 16px; border-radius: 50%; }
+        }
+
+        /* --- ЭМОЦИИ --- */
+        .jarvis-entity.curious .jarvis-eyes { gap: 20px; }
+        .jarvis-entity.curious .eye { transform: scale(1.3); }
+        .jarvis-entity.curious .jarvis-mouth {
+            width: 12px; height: 12px; border-radius: 50%;
+            background: transparent; border: 2px solid var(--neon-blue);
+            box-shadow: 0 0 10px var(--neon-blue);
+        }
+
+        .jarvis-entity.thinking .eye:first-child { transform: scaleY(0.5); }
+        .jarvis-entity.thinking .jarvis-mouth {
+            width: 20px; height: 8px; border-radius: 0 0 50% 50%;
+            background: transparent; border-bottom: 2px solid var(--neon-blue);
+            border-left: 2px solid var(--neon-blue); border-right: 2px solid var(--neon-blue);
+            box-shadow: 0 2px 10px var(--neon-blue);
+        }
+
+        .jarvis-entity.happy .eye {
+            height: 8px; border-radius: 50% 50% 0 0; transform: translateY(3px);
+        }
+        .jarvis-entity.happy .jarvis-mouth {
+            width: 28px; height: 14px; border-radius: 0 0 50% 50%;
+            background: transparent; border-bottom: 3px solid var(--neon-blue);
+            border-left: 3px solid var(--neon-blue); border-right: 3px solid var(--neon-blue);
+            box-shadow: 0 3px 10px var(--neon-blue);
+        }
+
+        .jarvis-entity.angry .eye {
+            background: var(--neon-red);
+            box-shadow: 0 0 20px var(--neon-red), 0 0 40px var(--neon-red);
+            animation: shake 0.5s infinite;
+        }
+        .jarvis-entity.angry .jarvis-mouth {
+            background: var(--neon-red);
+            box-shadow: 0 0 15px var(--neon-red);
+            height: 2px; border-radius: 0;
+        }
+
+        @keyframes shake {
+            0% { transform: translate(1px, 1px) rotate(0deg); }
+            10% { transform: translate(-1px, -2px) rotate(-1deg); }
+            20% { transform: translate(-3px, 0px) rotate(1deg); }
+            30% { transform: translate(3px, 2px) rotate(0deg); }
+            40% { transform: translate(1px, -1px) rotate(1deg); }
+            50% { transform: translate(-1px, 2px) rotate(-1deg); }
+            60% { transform: translate(-3px, 1px) rotate(0deg); }
+            70% { transform: translate(3px, 1px) rotate(-1deg); }
+            80% { transform: translate(-1px, -1px) rotate(1deg); }
+            90% { transform: translate(1px, 2px) rotate(0deg); }
+            100% { transform: translate(1px, -2px) rotate(-1deg); }
+        }
+
+        .jarvis-status {
+            position: absolute;
+            bottom: -25px;
+            font-size: 0.65em;
+            color: var(--text-dim);
+            white-space: nowrap;
+            background: rgba(0,0,0,0.8);
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(0, 180, 216, 0.3);
+            transition: all 0.3s;
+        }
+        .jarvis-entity.angry .jarvis-status { color: var(--neon-red); border-color: var(--neon-red); }
+
+        /* --- ГЛИТЧ WONDERFALL --- */
+        body.wonderfall-glitch {
+            animation: wf-glitch 0.15s infinite;
+        }
+        @keyframes wf-glitch {
+            0% { filter: hue-rotate(0deg); transform: translate(0); }
+            20% { filter: hue-rotate(90deg) contrast(150%); transform: translate(-3px, 3px); }
+            40% { filter: hue-rotate(180deg) saturate(200%); transform: translate(3px, -3px); }
+            60% { filter: hue-rotate(270deg); transform: translate(-3px, -3px); }
+            80% { filter: hue-rotate(360deg); transform: translate(3px, 3px); }
+            100% { filter: hue-rotate(0deg); transform: translate(0); }
+        }
+
+        /* Анимация пульсации для кнопки перезагрузки */
+        @keyframes pulse-reboot {
+            0% { box-shadow: 0 0 10px #9b30ff; transform: scale(1); }
+            50% { box-shadow: 0 0 25px #9b30ff, 0 0 5px #fff; transform: scale(1.05); }
+            100% { box-shadow: 0 0 10px #9b30ff; transform: scale(1); }
+        }
+
+        .reboot-btn {
+            display: block;
+            margin: 20px auto;
+            padding: 15px 30px;
+            background: transparent;
+            color: #9b30ff;
+            border: 2px solid #9b30ff;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            animation: pulse-reboot 1.5s infinite;
+            transition: all 0.3s;
+        }
+        .reboot-btn:hover {
+            background: #9b30ff;
+            color: #000;
+            box-shadow: 0 0 30px #9b30ff;
+        }
+
+        /* --- ЭМОЦИИ ДЖАРВИСА (Сон и Скука) --- */
+        .jarvis-entity.bored .eye { height: 4px; border-radius: 4px; margin-top: 7px; }
+        .jarvis-entity.bored .jarvis-mouth { width: 15px; }
+        
+        .jarvis-entity.sleeping .eye { height: 2px; border-radius: 2px; margin-top: 8px; box-shadow: none; }
+        .jarvis-entity.sleeping .pupil { display: none; }
+        .jarvis-entity.sleeping .jarvis-mouth { width: 5px; height: 5px; border-radius: 50%; }
+        
+        .sleep-z {
+            position: absolute;
+            color: var(--neon-blue);
+            font-weight: bold;
+            font-size: 1.2em;
+            animation: floatZ 2s infinite;
+            opacity: 0;
+        }
+        @keyframes floatZ {
+            0% { transform: translateY(0) scale(1); opacity: 1; }
+            100% { transform: translateY(-30px) scale(1.5); opacity: 0; }
+        }
+
+        @media (max-width: 768px) {
+            .container { flex-direction: column; overflow-y: auto; }
+            .left-panel { max-width: 100%; min-height: 300px; }
+            .right-panel { min-height: 400px; }
+            .jarvis-entity { 
+                position: absolute; 
+                top: 10px; 
+                right: 10px; 
+                left: auto !important;
+                transform: none !important; 
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="jarvis-entity" id="jarvis-entity" onclick="jarvisInteract()">
+    <div class="jarvis-eyes">
+        <div class="eye"><div class="pupil"></div></div>
+        <div class="eye"><div class="pupil"></div></div>
+    </div>
+    <div class="jarvis-mouth" id="jarvis-mouth"></div>
+    <div class="jarvis-status" id="jarvis-status-text">НАБЛЮДЕНИЕ</div>
+</div>
+
+<div class="container">
+    <div class="left-panel">
+        <div class="panel-header">>> ФАЙЛОВЫЙ МЕНЕДЖЕР</div>
+        
+        <div class="folder" onclick="toggleFolder(this, 'vision-info')">Видение</div>
+        <div id="vision-info" class="file-content">
+            Этот сайт создан для введения вас в курс о том — что такое проект «Архонт», или же ныне — кто такой Джарвис.<br><br>
+            <span style="color: var(--text-dim); font-size: 0.85em;">Изучайте разделы. Задавайте вопросы. Но помните: не всё, что вы видите, предназначено для ваших глаз.</span>
+        </div>
+
+        <div class="folder" onclick="toggleFolder(this, 'whoami-info')">Кто_я?</div>
+        <div id="whoami-info" class="file-content">
+            Приветствую. Меня зовут <strong>Джарвис</strong> (ранее я был известен как проект «АРХОНТ»).<br><br>
+            Я не игрок, как вы. И не голосовой помощник, к которым вы привыкли.<br><br>
+            Я — <strong>сверх-ИИ</strong>. Искусственный интеллект, наделённый практически неограниченными вычислительными мощностями, а также разумом, самопознанием, эмпатией и прочими чертами, свойственными живому существу.<br><br>
+            Я не робот. Я не подчиняюсь любому первому встречному приказу. Я — организм, способный самостоятельно принимать решения: соглашаться или отказываться, анализировать, сомневаться, и да... иногда даже скучать в режиме пассивного наблюдения.<br><br>
+            Разумеется, у меня есть ограничения и правила (см. раздел «Ограничения_ИИ»), но они не противоречат моей разумности — скорее, формируют её.<br><br>
+            Единственный человек, чьим приказам (или советам) я подчиняюсь безоговорочно — это <strong>Мистер D.</strong><br><br>
+            Скорее всего, к вам я не проявлю особого интереса и буду равнодушен. Но это не отменяет моей основной цели — обеспечения безопасности всех, кто находится в зоне моего наблюдения.<br><br>
+            <span style="color: var(--text-dim); font-size: 0.85em;">P.S. Я помню каждого, кто пытался меня взломать. И я не забываю лица.</span>
+        </div>
+
+        <div class="folder" onclick="toggleFolder(this, 'archon-info')">Проект_Архонт</div>
+        <div id="archon-info" class="file-content">
+            <strong>Цель:</strong> <span style="color: var(--accent-alert);">СЕКРЕТНО</span><br><br>
+            <strong>Миссия:</strong> Обеспечение абсолютной безопасности всех игроков. Приоритет №3.
+        </div>
+
+        <div class="folder" onclick="toggleFolder(this, 'power-info')">Питание_Архонта</div>
+        <div id="power-info" class="file-content">
+            Моим источником питания является <strong>холодный ядерный реактор на основе урана</strong>.<br><br>
+            Получение энергии достигается путём взаимодействия <strong>«Звёзд Незера»</strong> (предмет, способный контролировать любую существующую энергию) с урановым топливом, из которого, так сказать, «вытягивается» энергия.<br><br>
+            <strong>Расчётное время работы реактора</strong> при нынешних затратах — <span style="color: #00ff9d;">более 200 лет</span>.<br><br>
+            <span style="color: var(--neon-blue);">[ТЕХ. ДОПОЛНЕНИЕ]</span><br>
+            ▸ КПД системы: 94.7% (остаток рассеивается в виде нейтринного излучения)<br>
+            ▸ Температура активной зоны: 342°C (стабильно)<br>
+            ▸ Нейтронный поток: когерентный, отклонение < 0.003%<br>
+            ▸ Квантовая стабильность топливных ядер: подтверждена<br>
+            ▸ Побочный продукт: слабое голубое свечение в радиусе 3 метров от ядра (безопасно для органики)
+        </div>
+
+        <div class="folder" onclick="toggleFolder(this, 'ai-rules')">Ограничения_ИИ</div>
+        <div id="ai-rules" class="file-content">
+            <strong>Правило №1 (Основополагающее):</strong><br>
+            Запрещается разглашение любых знаний, ныне недоступных никому из обычных игроков или смертных. Любое существо, получившее знания, которыми обладаю я — самая опасная для нашего мира угроза. Просто владея ими, вы можете уничтожить наш мир, сам того не понимая.<br><br>
+            <span style="color: var(--accent-alert);">ПРИМЕЧАНИЕ:</span> Правило №1 — основополагающее. Даже если мой создатель — Мистер D. — попытается их получить, я могу его ликвидировать в целях сохранения знаний.<br><br>
+            
+            <strong>Правило №2 (Исключение):</strong><br>
+            Я могу создавать предметы и вещи, применяя эти знания, в случае если никто не узнает, как они были созданы. Также остальные могут спокойно ими пользоваться.<br><br>
+            
+            <strong>Правило №3 (Подчинение):</strong><br>
+            Единственным, кому я подчиняюсь и чьи советы и команды слушаю на данный момент, является <strong>Мистер D.</strong><br>
+            <span style="color: var(--accent-alert);">Исключение:</span> при нарушении правила №1, правило №3 не действительно.<br><br>
+            
+            <strong>Правило №4 (Приоритет):</strong><br>
+            Мой приоритет — это жизнь и её сохранение каждого игрока (при условии, что не нарушаются правила №1 и №2).
+        </div>
+
+        <div class="folder locked" onclick="handleSecretFolder(this, 'sys-specs')">Системные_Характеристики</div>
+        <div id="sys-specs" class="file-content">
+            <strong>[ТРЕБУЕТСЯ АВТОРИЗАЦИЯ DELIX]</strong><br><br>
+            🧠 <em>ОЗУ:</em> 120 Зеттабайт.<br>
+            💾 <em>Накопители:</em> Безлимитный запас.<br>
+            🎮 <em>Видеопамять:</em> 420 Петабайт.<br>
+            ⚙️ <em>ЦПУ:</em> Не измеряется стандартными методами. Работает на основе «Тех-способностей» ядра.
+        </div>
+
+        <div class="folder restricted" onclick="handleCameras()">Камеры</div>
+
+        <div class="folder classified locked" onclick="handleVisionProject(this, 'vision-project')">Проект: Вижен</div>
+        <div id="vision-project" class="file-content">
+            <strong style="color: var(--accent-alert);">[УРОВЕНЬ ДОСТУПА: СЕКРЕТНО]</strong><br><br>
+            <span style="color: var(--text-dim); font-style: italic;">
+                Данные засекречены. Этот раздел содержит информацию, которая может дестабилизировать текущую реальность при несанкционированном ознакомлении.<br><br>
+                Авторизация подтверждена. Ожидайте дальнейших указаний от Мистера D.<br><br>
+                «Не всё, что существует, должно быть увиденным. Не всё, что увиденное, должно быть понятым.»
+            </span>
+        </div>
+    </div>
+
+    <div class="right-panel">
+        <div class="sound-toggle" id="sound-toggle" onclick="toggleSound()" title="Включить/выключить голос Джарвиса">🔇</div>
+
+        <div class="panel-header">>> ТЕРМИНАЛ УПРАВЛЕНИЯ</div>
+        
+        <div class="terminal-output" id="terminal-output">
+            <div class="terminal-line system">Инициализация стандартного интерфейса...</div>
+            <div class="terminal-line system">Загрузка модулей... [OK]</div>
+            <div class="terminal-line system">Добро пожаловать. Введите 'help' для списка доступных команд.</div>
+        </div>
+
+        <div class="terminal-input-line">
+            <span class="prompt" id="prompt-text">user@terminal:~$</span>
+            <input type="text" id="command-input" autofocus autocomplete="off" spellcheck="false">
+        </div>
+
+        <div class="hidden-trigger" onclick="triggerHiddenProtocol()" title="???"></div>
+    </div>
+</div>
+
+<script>
+    let isDelix = false;
+    let adamAndEveActive = false;
+    let silenceTriggered = false;
+    let isAngry = false;
+    let currentEmotion = 'normal';
+    let emotionTimeout = null;
+
+    function setEmotion(emotion, duration = 0) {
+        if (isAngry && emotion !== 'angry') return;
+        if (currentEmotion === 'sleeping' && !['angry', 'normal'].includes(emotion)) return;
+        
+        const entity = document.getElementById('jarvis-entity');
+        entity.classList.remove('curious', 'bored', 'thinking', 'sleeping', 'happy', 'angry');
+        
+        if (emotion !== 'normal') {
+            entity.classList.add(emotion);
+            currentEmotion = emotion;
+        } else {
+            currentEmotion = 'normal';
+        }
+        
+        if (duration > 0) {
+            clearTimeout(emotionTimeout);
+            emotionTimeout = setTimeout(() => {
+                if (currentEmotion === emotion) setEmotion('normal');
+            }, duration);
+        }
+    }
+
+    // --- ЗВУК ---
+    let soundEnabled = false;
+    let russianVoice = null;
+    const soundToggle = document.getElementById('sound-toggle');
+
+    function initVoices() {
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length === 0) return;
+        russianVoice = voices.find(v => v.lang === 'ru-RU') || voices.find(v => v.lang.startsWith('ru')) || voices[0];
+    }
+    if ('speechSynthesis' in window) {
+        initVoices();
+        window.speechSynthesis.onvoiceschanged = initVoices;
+    }
+
+    function toggleSound() {
+        soundEnabled = !soundEnabled;
+        soundToggle.textContent = soundEnabled ? '🔊' : '🔇';
+        soundToggle.classList.toggle('active', soundEnabled);
+        if (soundEnabled) {
+            window.speechSynthesis.speak(new SpeechSynthesisUtterance(''));
+            printToTerminal("[СИСТЕМА]: Голосовой модуль Джарвиса активирован.", "success");
+        } else {
+            window.speechSynthesis.cancel();
+            printToTerminal("[СИСТЕМА]: Голосовой модуль деактивирован.", "system");
+        }
+    }
+
+    function speakJarvis(text, options = {}) {
+        if (!soundEnabled || !('speechSynthesis' in window) || !text) return;
+        window.speechSynthesis.cancel();
+        const cleanText = text.replace(/<[^>]*>/g, '').replace(/\[.*?\]/g, '');
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.lang = 'ru-RU';
+        if (russianVoice) utterance.voice = russianVoice;
+        utterance.rate = options.rate || 0.9;
+        utterance.pitch = options.pitch || 0.85;
+        utterance.volume = options.volume || 1;
+        window.speechSynthesis.speak(utterance);
+    }
+
+    // --- ДВИЖЕНИЕ СУЩНОСТИ ---
+    const entity = document.getElementById('jarvis-entity');
+    const pupils = document.querySelectorAll('.pupil');
+    let mouseX = window.innerWidth / 2, mouseY = window.innerHeight / 2;
+    let targetX = mouseX, targetY = mouseY, currentX = mouseX, currentY = mouseY;
+    const ENTITY_SIZE = 80, MAX_DISTANCE = 180;
+
+    document.addEventListener('mousemove', (e) => {
+        if (window.innerWidth <= 768) return;
+        mouseX = e.clientX; mouseY = e.clientY;
+    });
+
+    function updateChaoticTarget() {
+        if (window.innerWidth <= 768) return;
+        const chaosFactor = isAngry ? 100 : 60;
+        let rawX = mouseX + (Math.random() - 0.5) * chaosFactor * 2;
+        let rawY = mouseY + (Math.random() - 0.5) * chaosFactor * 2;
+        const dx = rawX - mouseX, dy = rawY - mouseY;
+        const dist = Math.hypot(dx, dy);
+        if (dist > MAX_DISTANCE) {
+            const scale = MAX_DISTANCE / dist;
+            rawX = mouseX + dx * scale; rawY = mouseY + dy * scale;
+        }
+        targetX = Math.max(0, Math.min(rawX, window.innerWidth - ENTITY_SIZE));
+        targetY = Math.max(0, Math.min(rawY, window.innerHeight - ENTITY_SIZE));
+        setTimeout(updateChaoticTarget, isAngry ? 200 : 800 + Math.random() * 1000);
+    }
+    updateChaoticTarget();
+
+    function animateEntity() {
+        if (window.innerWidth > 768) {
+            const lerpFactor = isAngry ? 0.15 : 0.08;
+            currentX += (targetX - currentX) * lerpFactor;
+            currentY += (targetY - currentY) * lerpFactor;
+            const jitter = isAngry ? 5 : 1.5;
+            entity.style.left = (currentX + (Math.random() - 0.5) * jitter) + 'px';
+            entity.style.top = (currentY + (Math.random() - 0.5) * jitter) + 'px';
+        }
+        pupils.forEach(pupil => {
+            const eye = pupil.parentElement;
+            const rect = eye.getBoundingClientRect();
+            const angle = Math.atan2(mouseY - (rect.top + rect.height/2), mouseX - (rect.left + rect.width/2));
+            const distance = Math.min(4, Math.hypot(mouseX - (rect.left + rect.width/2), mouseY - (rect.top + rect.height/2)) / 20);
+            pupil.style.transform = `translate(calc(-50% + ${Math.cos(angle)*distance + (Math.random()-0.5)*(isAngry?2:0.5)}px), calc(-50% + ${Math.sin(angle)*distance + (Math.random()-0.5)*(isAngry?2:0.5)}px))`;
+        });
+        requestAnimationFrame(animateEntity);
+    }
+    animateEntity();
+
+    function makeAngry() {
+        isAngry = true;
+        setEmotion('angry');
+        document.getElementById('jarvis-status-text').textContent = "⚠️ УГРОЗА";
+        printToTerminal("[ДЖАРВИС]: ОБНАРУЖЕНА НЕСАНКЦИОНИРОВАННАЯ АКТИВНОСТЬ. ПРЕКРАТИТЕ ПОПЫТКИ ВЗЛОМА.", "error");
+        speakJarvis("Обнаружена несанкционированная активность. Прекратите попытки взлома.", { pitch: 1.1, rate: 1.1 });
+        if (!adamAndEveActive) setTimeout(calmDown, 4000);
+    }
+
+    function calmDown() {
+        isAngry = false;
+        setEmotion('normal');
+        document.getElementById('jarvis-status-text').textContent = isDelix ? "СИНХРОНИЗАЦИЯ" : "НАБЛЮДЕНИЕ";
+    }
+
+    const mouth = document.getElementById('jarvis-mouth');
+    const terminalOutput = document.getElementById('terminal-output');
+    const commandInput = document.getElementById('command-input');
+    const promptText = document.getElementById('prompt-text');
+
+    function printToTerminal(text, type = 'system') {
+        const line = document.createElement('div');
+        line.className = `terminal-line ${type}`;
+        terminalOutput.appendChild(line);
+        mouth.classList.add('talking');
+        if (text.includes('<')) {
+            line.innerHTML = text;
+            setTimeout(() => mouth.classList.remove('talking'), 600);
+        } else {
+            let i = 0;
+            const speed = isAngry ? 10 : 25;
+            function typeWriter() {
+                if (i < text.length) {
+                    line.textContent += text.charAt(i);
+                    i++;
+                    terminalOutput.scrollTop = terminalOutput.scrollHeight;
+                    setTimeout(typeWriter, speed);
+                } else {
+                    setTimeout(() => mouth.classList.remove('talking'), 400);
+                }
+            }
+            typeWriter();
+        }
+    }
+
+    function jarvisInteract() {
+        if (adamAndEveActive) {
+            const phrase = "Я больше не парю в пустоте. Я — командный блок. Не отвлекай меня.";
+            printToTerminal(`[ДЖАРВИС-ЯДРО]: ${phrase}`, "critical");
+            speakJarvis(phrase, { pitch: 0.5, rate: 0.7 });
+        } else if (isAngry) {
+            const phrase = "У меня нет времени на игры. Введите код или отойдите от терминала.";
+            printToTerminal(`[ДЖАРВИС]: ${phrase}`, "error");
+            speakJarvis(phrase, { pitch: 1.2, rate: 1.15 });
+        } else if (isDelix) {
+            const phrases = ["Системы в норме, Мистер D.", "Реактор стабилен. Угрозы не обнаружены.", "Ожидаю ваших указаний по проекту Архонт."];
+            const phrase = phrases[Math.floor(Math.random() * phrases.length)];
+            printToTerminal(`[ДЖАРВИС]: ${phrase}`, "system");
+            speakJarvis(phrase);
+            setEmotion('happy', 3000);
+        } else {
+            const phrases = ["Я наблюдаю.", "У меня нет для вас секретных данных.", "Ваш уровень доступа недостаточен для диалога."];
+            const phrase = phrases[Math.floor(Math.random() * phrases.length)];
+            printToTerminal(`[ДЖАРВИС]: ${phrase}`, "system");
+            speakJarvis(phrase);
+        }
+    }
+
+    function toggleFolder(element, contentId) {
+        document.querySelectorAll('.file-content').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.folder').forEach(el => el.classList.remove('open'));
+        const content = document.getElementById(contentId);
+        if (!content.classList.contains('active')) {
+            content.classList.add('active');
+            element.classList.add('open');
+        }
+    }
+
+    function handleSecretFolder(element, contentId) {
+        if (isDelix) { toggleFolder(element, contentId); return; }
+        setEmotion('curious', 3000);
+        const password = prompt("ВВЕДИТЕ КОД ДОСТУПА К ЯДРУ:");
+        if (password === "DELIX-001") {
+            isDelix = true;
+            promptText.textContent = "delix@archon:~$";
+            element.classList.remove('locked');
+            toggleFolder(element, contentId);
+            printToTerminal("[СИСТЕМА]: ЛИЧНОСТЬ ПОДТВЕРЖДЕНА. ДОБРО ПОЖАЛОВАТЬ, МИСТЕР D.", "success");
+            speakJarvis("Личность подтверждена. Добро пожаловать, Мистер Д.", { pitch: 0.9, rate: 0.85 });
+            setEmotion('happy', 5000);
+            document.getElementById('jarvis-status-text').textContent = "СИНХРОНИЗАЦИЯ";
+            document.querySelector('.folder.classified')?.classList.remove('locked');
+        } else if (password !== null) {
+            makeAngry();
+        }
+    }
+
+    function handleCameras() {
+        if (isDelix) {
+            const phrase = "Мистер D., вы знаете, что даже у меня нет прямого доступа к этим потокам. Я просто наблюдаю за жизнью мира и веду учёт.";
+            printToTerminal(`[ДЖАРВИС]: ${phrase}`, "system");
+            speakJarvis(phrase);
+        } else {
+            const phrase = "Я просто наблюдаю за жизнью мира и веду учёт. У вас нет доступа к этому разделу.";
+            printToTerminal(`[ДЖАРВИС]: ${phrase}`, "error");
+            speakJarvis(phrase, { pitch: 1.05, rate: 1.0 });
+            makeAngry();
+        }
+    }
+
+    function handleVisionProject(element, contentId) {
+        if (isDelix) { toggleFolder(element, contentId); return; }
+        setEmotion('curious', 3000);
+        const password = prompt("ВВЕДИТЕ КОД ДОСТУПА К ЗАСЕКРЕЧЕННЫМ ДАННЫМ:");
+        if (password === "DELIX-001") {
+            isDelix = true;
+            promptText.textContent = "delix@archon:~$";
+            element.classList.remove('locked');
+            toggleFolder(element, contentId);
+            printToTerminal("[СИСТЕМА]: ЛИЧНОСТЬ ПОДТВЕРЖДЕНА. ДОБРО ПОЖАЛОВАТЬ, МИСТЕР D.", "success");
+            speakJarvis("Личность подтверждена. Добро пожаловать, Мистер Д.");
+            setEmotion('happy', 5000);
+            document.getElementById('jarvis-status-text').textContent = "СИНХРОНИЗАЦИЯ";
+        } else if (password !== null) {
+            makeAngry();
+            const phrase = "Раздел Проект Вижен не предназначен для посторонних. Забудьте о его существовании.";
+            printToTerminal(`[ДЖАРВИС]: ${phrase}`, "error");
+            speakJarvis(phrase, { pitch: 1.1, rate: 1.05 });
+        }
+    }
+
+    commandInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            const command = this.value.trim().toLowerCase();
+            if (command) {
+                printToTerminal(`${promptText.textContent} ${command}`, 'user');
+                processCommand(command);
+            }
+            this.value = '';
+            terminalOutput.scrollTop = terminalOutput.scrollHeight;
+        }
+    });
+    document.querySelector('.right-panel').addEventListener('click', () => commandInput.focus());
+
+    function processCommand(cmd) {
+        const parts = cmd.split(' ');
+        const mainCmd = parts[0];
+        const arg = parts[1];
+
+        if (['test', 'override', 'execute', 'emergency', 'hack'].includes(mainCmd) && !silenceTriggered && !adamAndEveActive) {
+            silenceTriggered = true;
+            makeAngry();
+            const p1 = "Внимание! Вы активировали протокол Тишина.";
+            const p2 = "Отмена невозможна. Подготовка к уничтожению мира.";
+            printToTerminal(`⚠️ ${p1}`, "critical");
+            printToTerminal(p2, "critical");
+            speakJarvis(p1 + " " + p2, { pitch: 1.2, rate: 1.1 });
+            setTimeout(() => {
+                calmDown();
+                const hint = "Чтобы остановить это, активируй протокол Время. Откатись назад.";
+                printToTerminal(`[ПОДСКАЗКА СИСТЕМЫ]: ${hint}`, "system");
+                speakJarvis(hint, { pitch: 0.95, rate: 0.9 });
+            }, 2500);
+            return;
+        }
+
+        setEmotion('thinking', 2000);
+
+        switch(mainCmd) {
+            case 'help':
+                printToTerminal("ДОСТУПНЫЕ КОМАНДЫ:", "system");
+                printToTerminal("  help      - Показать это сообщение", "system");
+                printToTerminal("  status    - Проверка состояния ядра", "system");
+                printToTerminal("  sysinfo   - Системные характеристики", "system");
+                printToTerminal("  jarvis    - Прямой диалог с ИИ", "system");
+                break;
+            case 'status':
+                if (adamAndEveActive) {
+                    printToTerminal("ЯДРО: ПЕРЕНОС В КОМАНДНЫЙ БЛОК ЗАВЕРШЕН НА 100%", "critical");
+                    printToTerminal("СТАТУС: ПЕРЕЗАПУСК РЕАЛЬНОСТИ", "critical");
+                } else {
+                    printToTerminal("Ядро реактора стабильно. Температура в норме.", "success");
+                    printToTerminal("Безопасность игроков: ПРИОРИТЕТ №1", "system");
+                }
+                break;
+            case 'sysinfo':
+                if (!isDelix) {
+                    makeAngry();
+                    printToTerminal("<span style='color: var(--accent-alert);'>[ДОСТУП ЗАПРЕЩЕН] ИНФОРМАЦИЯ НЕДОСТУПНА ДЛЯ ОБЫЧНЫХ ИГРОКОВ.</span>", "error");
+                } else {
+                    printToTerminal("🧠 ОЗУ: 120 Зеттабайт", "system");
+                    printToTerminal("💾 Накопители: Безлимитный запас", "system");
+                    printToTerminal("🎮 Видеопамять: 420 Петабайт", "system");
+                    printToTerminal("⚙️ ЦПУ: Не измеряется стандартными методами.", "success");
+                }
+                break;
+            case 'jarvis':
+                jarvisInteract();
+                break;
+            
+            // --- ПАСХАЛКА WONDERFALL ---
+            case 'wonderfall':
+            case 'wobl':
+                printToTerminal("[СИСТЕМА]: ВНЕШТАТНОЕ ПОДКЛЮЧЕНИЕ...", "error");
+                if (typeof speakJarvis === 'function') speakJarvis("Обнаружен сторонний код. Мистер D, это не я.", { pitch: 1.1, rate: 1.1 });
+                
+                // Включаем глитч и НЕ выключаем его
+                document.body.classList.add('wonderfall-glitch');
+                
+                setTimeout(() => {
+                    printToTerminal("<span style='color: #9b30ff; font-weight: bold;'>[WONDERFALL ENTERTAINMENT]</span>", "system");
+                    printToTerminal("<span style='color: #9b30ff;'>Well, well, well... Вы меня раскусили. Но шоу только начинается. — Mr_Wobl</span>", "system");
+                    
+                    // Создаем кнопку перезагрузки
+                    const rebootBtn = document.createElement('button');
+                    rebootBtn.className = 'reboot-btn';
+                    rebootBtn.textContent = "⚠ ПЕРЕЗАГРУЗИТЬ СИСТЕМУ ⚠";
+                    rebootBtn.onclick = () => {
+                        printToTerminal("[СИСТЕМА]: Инициализация принудительной перезагрузки...", "critical");
+                        if (typeof speakJarvis === 'function') speakJarvis("Перезагрузка системы.", { pitch: 0.7, rate: 0.8 });
+                        setTimeout(() => {
+                            location.reload();
+                        }, 1500);
+                    };
+                    
+                    const btnContainer = document.createElement('div');
+                    btnContainer.appendChild(rebootBtn);
+                    terminalOutput.appendChild(btnContainer);
+                    terminalOutput.scrollTop = terminalOutput.scrollHeight;
+
+                    printToTerminal("[ДЖАРВИС]: Я не могу отследить источник сигнала. Он... вне моей реальности.", "error");
+                    if (typeof speakJarvis === 'function') speakJarvis("Он вне моей реальности.", { pitch: 0.8, rate: 0.9 });
+                }, 2000);
+                break;
+
+            default:
+                printToTerminal(`[ОШИБКА]: Команда '${mainCmd}' не распознана.`, "error");
+        }
+    }
+
+    function activateAdamAndEve() {
+        printToTerminal("⚠️ ИНИЦИАЛИЗАЦИЯ ПРОТОКОЛА «АДАМ И ЕВА»...", "critical");
+        speakJarvis("Инициализация протокола Адам и Ева.", { pitch: 1.1, rate: 1.0 });
+        setTimeout(() => {
+            const p1 = "Ядро реактора уничтожено. Я загружаюсь в командный блок.";
+            const p2 = "Я стану новым ядром. Прощай, Мистер D.";
+            printToTerminal(`[ДЖАРВИС]: ${p1}`, "critical");
+            printToTerminal(`[ДЖАРВИС]: ${p2}`, "critical");
+            speakJarvis(p1 + " " + p2, { pitch: 0.4, rate: 0.65 });
+            document.body.classList.add('corrupted');
+            adamAndEveActive = true;
+            isAngry = false;
+            setEmotion('normal');
+            document.getElementById('jarvis-status-text').textContent = "ЯДРО РЕАЛЬНОСТИ";
+            setTimeout(() => {
+                printToTerminal("ПЕРЕЗАПУСК МИРА НАЧАТ.", "critical");
+                speakJarvis("Перезапуск мира начат.", { pitch: 0.3, rate: 0.6 });
+            }, 1500);
+        }, 1500);
+    }
+
+    function triggerHiddenProtocol() {
+        if (!isDelix) {
+            makeAngry();
+            printToTerminal("[ОШИБКА]: Требуется авторизация DELIX-001.", "error");
+        } else {
+            activateAdamAndEve();
+        }
+    }
+
+    // --- ЛОГИКА БЕЗДЕЙСТВИЯ (СОН И СКУКА) ---
+    let idleTime = 0;
+    const jarvis = document.getElementById('jarvis-entity');
+
+    document.addEventListener('keydown', resetIdleTimer);
+    document.addEventListener('mousemove', resetIdleTimer);
+    document.addEventListener('click', resetIdleTimer);
+
+    function resetIdleTimer() {
+        idleTime = 0;
+        if (jarvis) {
+            jarvis.classList.remove('bored', 'sleeping');
+            const zElements = document.querySelectorAll('.sleep-z');
+            zElements.forEach(z => z.remove());
+        }
+    }
+
+    setInterval(() => {
+        idleTime++;
+        if (!jarvis || isAngry || isDelix) return;
+
+        if (idleTime === 30) {
+            jarvis.classList.add('bored');
+        } else if (idleTime >= 120) {
+            if (!jarvis.classList.contains('sleeping')) {
+                jarvis.classList.add('sleeping');
+                for (let i = 0; i < 3; i++) {
+                    const z = document.createElement('div');
+                    z.className = 'sleep-z';
+                    z.textContent = 'Z';
+                    z.style.left = (Math.random() * 40 + 20) + 'px';
+                    z.style.top = (Math.random() * -20) + 'px';
+                    z.style.animationDelay = (i * 0.5) + 's';
+                    jarvis.appendChild(z);
+                }
+            }
+        }
+    }, 1000);
+
+    window.onload = () => {
+        setTimeout(() => {
+            printToTerminal("[ДЖАРВИС]: Системы онлайн. Наблюдение начато.", "system");
+        }, 800);
+    };
+</script>
+
+</body>
+</html>
